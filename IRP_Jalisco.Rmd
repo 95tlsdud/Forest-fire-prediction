@@ -1,0 +1,352 @@
+---
+title: "IRP_Jalisco"
+author: "Sinyoung Park"
+date: "07/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(raster)
+library(tidyverse)
+library(sf)
+library(rgdal)
+library(rpart)
+library(graphics)
+```
+
+```{r data}
+# data
+shp <- shapefile( x = "IINCENDIOS2017_Oficial/IINCENDIOS2017_Oficial.shp" )
+shp1<-st_as_sf(readOGR("IINCENDIOS2017_Oficial/IINCENDIOS2017_Oficial.shp"))
+
+```
+
+## Centroid
+```{r}
+centroids <- st_centroid(shp1[1]$geometry)
+loc_fire <- do.call(rbind, centroids)
+```
+
+## Functions
+```{r original}
+
+fire_func <- function(data, cause) {
+  col_fire <- rep( 1, length(data$Causa) )
+  
+  ind <- which( data$Causa == cause)
+  
+  col_fire[ind] <- 2
+  
+  return(col_fire)
+}
+```
+
+
+
+```{r classification}
+class_func <- function( cause, loc_fire ){
+  
+  col_fire <- rep( 1, length(shp$Causa) )
+  ind <- which( shp$Causa == cause)
+  col_fire[ind] <- 2
+  
+  train <- data.frame(Id = shp1$Id ,col_fire, 
+                      loc_fire1 = loc_fire[,1], loc_fire2 = loc_fire[,2])
+  
+  tree <- rpart(col_fire ~ train[,3]+train[,4], data = train)
+  
+  classification <- sort(unique(tree$where))
+  train$where <- tree$where
+  
+  class_fire <- rep( 1, length(shp1$Causa) )
+  for (i in 1:length(shp1$Causa)) {
+    if (col_fire[i] == 2){
+      c <- train$where[i]
+      indx <- which(classification == c)
+      class_fire[i] <- indx+1
+    }
+  }
+  
+  result <- list(train, tree, class_fire)
+  return(result)
+  
+}
+
+```
+
+
+
+```{r classification_specific}
+spec_class <- function( train, tree){
+  train_spec <- train %>% filter(col_fire == 2)
+  
+  class_fire2 <- rep(1, length(train_spec$Id))
+  
+  classification <- sort( unique(tree$where) )
+  
+  for (i in 1:length(train_spec$Id)) {
+    c <- train_spec$where[i]
+    indx <- which(classification == c)
+    class_fire2[i] <- indx+1
+    
+  }
+  
+  spec_fire <- cbind(train_spec$loc_fire1, train_spec$loc_fire2)
+  result <- list(spec_fire, class_fire2)
+  return(result)
+}
+```
+
+
+## Agriculture
+```{r original}
+## without classification
+col_fire <- fire_func(shp, "Actividades Agropecuarias")
+plot( loc_fire, pch=19, col = col_fire )
+title(main = "Agriculture in 2017")
+legend("topleft",
+       legend = c("Others", "Agriculture"),
+       fill = 1:3,       # Color of the squares 
+       border = "black")
+```
+
+```{r classification}
+# classification
+agriculture <- class_func("Actividades Agropecuarias", loc_fire)
+agri_train <- agriculture[1]
+agri_tree <- agriculture[2]
+agri_class <- agriculture[3]
+
+nc_agri <- length(unique(agri_tree[[1]]$where))
+
+plot( loc_fire, pch=19, col = agri_class[[1]] )
+title(main = paste("Agriculture in 2017 with", 
+                   as.character(nc_agri), "classes", sep=" "))
+```
+
+
+
+```{r specific}
+# only intentional region
+agri_spec <- spec_class( agri_train[[1]],agri_tree[[1]] )
+agri_loc2 <- agri_spec[1]
+agri_class2 <- agri_spec[2]
+
+plot( agri_loc2[[1]], pch=19, col = agri_class2[[1]] )
+title(main = paste("Agriculture in 2017 with", 
+                   as.character(nc_agri), "classes", sep=" "))
+```
+
+
+## Intentional
+```{r original}
+## without classification
+col_fire <- fire_func(shp, "Intencional")
+plot( loc_fire, pch=19, col = col_fire )
+title(main = "Intention in 2017")
+legend("topleft",
+       legend = c("Others", "Intention"),
+       fill = 1:3,       # Color of the squares 
+       border = "black")
+```
+
+
+```{r classification}
+# classification
+intention <- class_func("Intencional", loc_fire)
+int_train <- intention[1]
+int_tree <- intention[2]
+int_class <- intention[3]
+
+nc_int <- length(unique(int_tree[[1]]$where))
+
+plot( loc_fire, pch=19, col = int_class[[1]] )
+title(main = paste("Intention in 2017 with", 
+                   as.character(nc_int), "classes", sep=" "))
+```
+
+
+```{r specific}
+# only intentional region
+intent_spec <- spec_class(int_train[[1]],int_tree[[1]])
+int_loc2 <- intent_spec[1]
+int_class2 <- intent_spec[2]
+
+plot( int_loc2[[1]], pch=19, col = int_class2[[1]] )
+title(main = paste("Intention in 2017 with", 
+                   as.character(nc_int), "classes", sep=" "))
+```
+
+
+## Campfire
+```{r original}
+## without classification
+col_fire <- fire_func(shp, "Fogatas")
+plot( loc_fire, pch=19, col = col_fire )
+title(main = "Campfire in 2017")
+legend("topleft",
+       legend = c("Others", "Campfire"),
+       fill = 1:3,       # Color of the squares 
+       border = "black")
+
+```
+
+
+```{r classification}
+# classification
+campfire <- class_func("Fogatas", loc_fire)
+camp_train <- campfire[1]
+camp_tree <- campfire[2]
+camp_class <- campfire[3]
+
+nc_camp <- length(unique(camp_tree[[1]]$where))
+
+plot( loc_fire, pch=19, col = camp_class[[1]] )
+title(main = paste("Campfire in 2017 with", 
+                   as.character(nc_camp), "classes", sep=" "))
+```
+
+
+```{r specific}
+# only campfire region
+camp_spec <- spec_class(camp_train[[1]],camp_tree[[1]])
+camp_loc2 <- camp_spec[1]
+camp_class2 <- camp_spec[2]
+
+plot( camp_loc2[[1]], pch=19, col = camp_class2[[1]] )
+title(main = paste("Campfire in 2017 with", 
+                   as.character(nc_camp), "classes", sep=" "))
+```
+
+## Smoking
+```{r original}
+## without classification
+col_fire <- fire_func(shp, "Fumadores")
+plot( loc_fire, pch=19, col = col_fire )
+title(main = "Smoking in 2017")
+legend("topleft",
+       legend = c("Others", "Smoking"),
+       fill = 1:3,       # Color of the squares 
+       border = "black")
+```
+
+
+```{r classification}
+smoking <- class_func("Fumadores", loc_fire)
+smok_train <- smoking[1]
+smok_tree <- smoking[2]
+smok_class <- smoking[3]
+
+nc_smok <- length(unique(smok_tree[[1]]$where))
+
+plot( loc_fire, pch=19, col = smok_class[[1]] )
+title(main = paste("Smoking in 2017 with", 
+                   as.character(nc_smok), "classes", sep=" "))
+```
+
+
+```{r specific}
+# only smoking region
+smok_spec <- spec_class(smok_train[[1]],smok_tree[[1]])
+smok_loc2 <- smok_spec[1]
+smok_class2 <- smok_spec[2]
+
+plot( smok_loc2[[1]], pch=19, col = smok_class2[[1]] )
+title(main = paste("Smoking in 2017 with", 
+                   as.character(nc_smok), "classes", sep=" "))
+```
+
+
+## By Months
+```{r extracting}
+# extract months
+fire_dates <- shp$Deteccdi
+fire_months <- c()
+n <- length(shp)
+for (i in c(1:n)) {
+  date <- fire_dates[i]
+  sub <- substring(date,1,7)
+  fire_months <- c(fire_months, sub)
+}
+shp$Months <- fire_months
+head(shp)
+```
+
+
+```{r dataframe}
+# 1. make a dataframe (ID, months, causa)
+ID <- as.integer(shp$Id)
+data_months <- data.frame(ID, fire_months, shp$Causa)
+
+
+# 2. extract rows by months = April, May and June
+Apr <- data_months %>% filter(fire_months == "2017/04")
+May <- data_months %>% filter(fire_months == "2017/05")
+June <- data_months %>% filter(fire_months == "2017/06")
+```
+
+
+```{r function}
+plot_months <- function(cause, month) {
+  fireMonth <- rep( 1, length(month$shp.Causa) )
+  indMonth <- which( month$shp.Causa == cause)
+  fireMonth[indMonth] <- 2
+  
+  loc_Month <- matrix(0, length(month$ID), 2 )
+
+
+  for (i in 1:length(month$ID)) {
+    id <- as.integer(month$ID[i])
+    loc_Month[i,] <- loc_fire[id,]
+    
+  }
+  
+  plot( loc_Month, pch=19, col = fireMonth)
+}
+
+
+```
+
+
+```{r Apr}
+plot_months("Actividades Agropecuarias", Apr)
+
+title(main = "April in 2017")
+legend("topleft",
+       legend = c("Others", "Agricultural"),
+       fill = 1:3,       # Color of the squares 
+       border = "black")
+```
+
+
+```{r May}
+plot_months("Actividades Agropecuarias", May)
+
+title(main = "May in 2017")
+legend("topleft",
+       legend = c("Others", "Agricultural"),
+       fill = 1:3,       # Color of the squares 
+       border = "black")
+
+
+
+```
+
+
+```{r June}
+plot_months("Actividades Agropecuarias", June)
+
+title(main = "June in 2017")
+legend("topleft",
+       legend = c("Others", "Agricultural"),
+       fill = 1:3,       # Color of the squares 
+       border = "black")
+
+
+```
+
+
